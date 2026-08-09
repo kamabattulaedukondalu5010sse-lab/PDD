@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/models.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.29.127:5000/api';
+  static const String baseUrl = 'https://pdd-4xpy.onrender.com/api';
   String? _token;
   User? _currentUser;
   bool _useMock = false;
