@@ -13,7 +13,7 @@ const BookingSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['hotel', 'transport'],
+    enum: ['hotel', 'transport', 'flight', 'train'],
     required: true
   },
   name: {

@@ -49,10 +49,7 @@ class ApiService {
     ),
   ];
 
-  late final List<Booking> _mockBookings = [
-    Booking(id: 'b1', type: 'hotel', name: 'Beach Resort Goa', details: 'Deluxe Room', cost: 4999, bookingIdString: 'TRP123456789', status: 'confirmed'),
-    Booking(id: 'b2', type: 'transport', name: 'Konkan Express', details: 'AC 3 Tier (Train)', cost: 2500, bookingIdString: 'TRP987654321', status: 'confirmed'),
-  ];
+  late final List<Booking> _mockBookings = [];
 
   late final List<Expense> _mockExpenses = [
     Expense(id: 'e1', title: 'Beach Resort Goa (Stay)', amount: 9000, category: 'stay', date: DateTime(2026, 5, 20)),
@@ -206,18 +203,6 @@ class ApiService {
         },
       );
       _mockTrips.add(mockTrip);
-      
-      // Auto seed mock bookings corresponding to it
-      _mockBookings.add(Booking(
-        id: 'bmock_${Random().nextInt(10000)}',
-        type: 'hotel',
-        name: 'Beach Resort Goa',
-        details: 'Deluxe Room',
-        cost: optCost * 0.45,
-        bookingIdString: 'TRP${Random().nextInt(900000000) + 100000000}',
-        status: 'confirmed',
-      ));
-      
       return mockTrip;
     }
 
@@ -253,6 +238,47 @@ class ApiService {
       return _mockBookings;
     } catch (e) {
       return _mockBookings;
+    }
+  }
+
+  Future<Booking?> createBooking(String tripId, String type, String name, String details, double cost) async {
+    final bodyData = {
+      'tripId': tripId,
+      'type': type,
+      'name': name,
+      'details': details,
+      'cost': cost.toInt(),
+    };
+
+    if (_useMock) {
+      final mock = Booking(
+        id: 'bmock_${Random().nextInt(10000)}',
+        type: type,
+        name: name,
+        details: details,
+        cost: cost,
+        bookingIdString: 'TRP${Random().nextInt(900000000) + 100000000}',
+        status: 'confirmed',
+      );
+      _mockBookings.add(mock);
+      return mock;
+    }
+
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/bookings'),
+        headers: _getHeaders(),
+        body: jsonEncode(bodyData),
+      ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 201) {
+        final data = jsonDecode(res.body);
+        return Booking.fromJson(data);
+      }
+      return null;
+    } catch (e) {
+      _useMock = true;
+      return createBooking(tripId, type, name, details, cost);
     }
   }
 

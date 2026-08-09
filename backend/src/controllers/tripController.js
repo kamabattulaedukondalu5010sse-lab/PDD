@@ -98,6 +98,28 @@ exports.createTrip = async (req, res) => {
       return res.status(400).json({ message: 'Please provide destination, dates, and budget.' });
     }
 
+    // Check for overlapping trips for this user
+    let userTrips;
+    if (getIsConnected()) {
+      userTrips = await Trip.find({ userId });
+    } else {
+      userTrips = mockTrips.filter(t => t.userId === userId);
+    }
+
+    const newStart = new Date(startDate);
+    const newEnd = new Date(endDate);
+
+    for (const t of userTrips) {
+      const tStart = new Date(t.startDate);
+      const tEnd = new Date(t.endDate);
+      const overlap = (newStart <= tEnd) && (newEnd >= tStart);
+      if (overlap) {
+        return res.status(400).json({ 
+          message: `Trip conflict: You already have a trip (${t.title}) planned from ${tStart.toLocaleDateString()} to ${tEnd.toLocaleDateString()} which overlaps with these dates.` 
+        });
+      }
+    }
+
     const start = new Date(startDate);
     const end = new Date(endDate);
     const durationDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) || 1;
@@ -232,33 +254,7 @@ exports.createTrip = async (req, res) => {
       };
       mockTrips.push(savedTrip);
 
-      // Seed mock bookings corresponding to this trip
-      mockBookings.push(
-        {
-          _id: generateId(),
-          userId,
-          tripId: savedTrip._id,
-          type: 'hotel',
-          name: hotelName,
-          details: roomType,
-          cost: Math.round(stayCost),
-          bookingIdString: 'TRP' + Math.floor(100000000 + Math.random() * 900000000),
-          status: 'confirmed',
-          createdAt: new Date()
-        },
-        {
-          _id: generateId(),
-          userId,
-          tripId: savedTrip._id,
-          type: 'transport',
-          name: transportType === 'Train' ? 'Konkan Express' : transportType === 'Flight' ? 'Indigo Air' : 'Volvo Intercity',
-          details: transportType === 'Train' ? '3AC Tier' : transportType === 'Flight' ? 'Economy' : 'Sleeper',
-          cost: Math.round(transportCost),
-          bookingIdString: 'TRP' + Math.floor(100000000 + Math.random() * 900000000),
-          status: 'confirmed',
-          createdAt: new Date()
-        }
-      );
+      // Bookings will start empty, user will book explicitly.
 
       // Seed mock expenses corresponding to this trip
       mockExpenses.push(

@@ -122,32 +122,7 @@ const mockTrips = [
   }
 ];
 
-const mockBookings = [
-  {
-    _id: '60d000000000000000000301',
-    userId: '60d000000000000000000001',
-    tripId: '60d000000000000000000201',
-    type: 'hotel',
-    name: 'Beach Resort Goa',
-    details: 'Deluxe Room',
-    cost: 4999,
-    bookingIdString: 'TRP123456789',
-    status: 'confirmed',
-    createdAt: new Date()
-  },
-  {
-    _id: '60d000000000000000000302',
-    userId: '60d000000000000000000001',
-    tripId: '60d000000000000000000201',
-    type: 'transport',
-    name: 'Konkan Express',
-    details: 'AC 3 Tier (Train)',
-    cost: 2500,
-    bookingIdString: 'TRP987654321',
-    status: 'confirmed',
-    createdAt: new Date()
-  }
-];
+const mockBookings = [];
 
 const mockExpenses = [
   {

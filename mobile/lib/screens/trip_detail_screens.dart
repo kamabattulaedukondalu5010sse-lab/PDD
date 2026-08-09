@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../services/api_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
+import 'booking_screens.dart';
 
 class MyTripsScreen extends StatefulWidget {
   const MyTripsScreen({super.key});
@@ -219,30 +220,141 @@ class TravelItineraryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final days = trip.itinerary.keys.toList()..sort();
+    final api = Provider.of<ApiService>(context);
 
-    if (days.isEmpty) {
-      return const Center(child: Text('No itinerary activities.', style: TextStyle(color: AppTheme.textMuted)));
-    }
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([api.getTrips(), api.getBookings()]),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final trips = (snapshot.data?[0] as List<Trip>?) ?? [];
+        final bookings = (snapshot.data?[1] as List<Booking>?) ?? [];
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(20),
-      itemCount: days.length,
-      itemBuilder: (context, index) {
-        final dayKey = days[index];
-        final list = trip.itinerary[dayKey] ?? [];
+        final hasHotel = bookings.any((b) => b.tripId == trip.id && b.type == 'hotel');
+        final hasTransport = bookings.any((b) => b.tripId == trip.id && (b.type == 'transport' || b.type == 'flight' || b.type == 'train'));
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // Check for date overlaps in bookings of other trips
+        bool hasHotelOverlap = false;
+        bool hasTransportOverlap = false;
+
+        for (final b in bookings) {
+          if (b.tripId == trip.id) continue;
+          
+          final bookedTrip = trips.firstWhere(
+            (t) => t.id == b.tripId,
+            orElse: () => Trip(id: '', title: '', destination: '', startDate: DateTime.now(), endDate: DateTime.now(), travelersCount: 1, budget: 0, optimizedCost: 0, transportType: '', hotelName: '', status: '', itinerary: {}),
+          );
+          if (bookedTrip.id.isNotEmpty) {
+            final overlap = (trip.startDate.isBefore(bookedTrip.endDate) || trip.startDate.isAtSameMomentAs(bookedTrip.endDate)) &&
+                            (trip.endDate.isAfter(bookedTrip.startDate) || trip.endDate.isAtSameMomentAs(bookedTrip.startDate));
+            if (overlap) {
+              if (b.type == 'hotel') hasHotelOverlap = true;
+              if (b.type == 'transport' || b.type == 'flight' || b.type == 'train') hasTransportOverlap = true;
+            }
+          }
+        }
+
+        final showBookingBanner = trip.status == 'upcoming' && (!hasHotel || !hasTransport);
+
+        return ListView(
+          padding: const EdgeInsets.all(20),
           children: [
-            Text(
-              dayKey,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primary),
-            ),
-            const Divider(color: AppTheme.primary),
-            const SizedBox(height: 8),
+            if (showBookingBanner) ...[
+              Card(
+                color: AppTheme.warning.withOpacity(0.06),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: AppTheme.warning, width: 0.5),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, color: AppTheme.warning, size: 20),
+                          SizedBox(width: 8),
+                          Text('Pending Reservations', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Some components of this trip have not been booked yet. Book them now to confirm your schedule.',
+                        style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.3),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          if (!hasHotel)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ElevatedButton.icon(
+                                  onPressed: hasHotelOverlap ? null : () {
+                                    Navigator.of(context).push(MaterialPageRoute(
+                                      builder: (_) => HotelBookingScreen(trip: trip),
+                                    ));
+                                  },
+                                  icon: Icon(hasHotelOverlap ? Icons.lock : Icons.hotel, size: 14),
+                                  label: Text(hasHotelOverlap ? 'Stay Conflict' : 'Book Stay', style: const TextStyle(fontSize: 11)),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    backgroundColor: hasHotelOverlap ? Colors.grey : AppTheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (!hasTransport)
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: hasTransportOverlap ? null : () {
+                                    Navigator.of(context).push(MaterialPageRoute(
+                                      builder: (_) => TransportBookingScreen(trip: trip),
+                                    ));
+                                },
+                                icon: Icon(hasTransportOverlap ? Icons.lock : Icons.train, size: 14),
+                                label: Text(hasTransportOverlap ? 'Transit Conflict' : 'Book Transit', style: const TextStyle(fontSize: 11)),
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  backgroundColor: hasTransportOverlap ? Colors.grey : AppTheme.primary,
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             
-            ...list.map((act) => _itineraryActivityRow(act)),
-            const SizedBox(height: 24),
+            if (days.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 40),
+                  child: Text('No itinerary activities.', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+              )
+            else
+              ...days.map((dayKey) {
+                final list = trip.itinerary[dayKey] ?? [];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dayKey,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                    ),
+                    const Divider(color: AppTheme.primary),
+                    const SizedBox(height: 8),
+                    ...list.map((act) => _itineraryActivityRow(act)),
+                    const SizedBox(height: 24),
+                  ],
+                );
+              }),
           ],
         );
       },

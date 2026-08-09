@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import 'planner_screens.dart';
 import 'trip_detail_screens.dart';
+import 'booking_screens.dart';
 
 class DashboardLayout extends StatefulWidget {
   const DashboardLayout({super.key});
@@ -1087,6 +1088,9 @@ class ProfileScreen extends StatelessWidget {
             }),
             _profileOption(Icons.description_outlined, 'My Documents', () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyDocumentsScreen()));
+            }),
+            _profileOption(Icons.book_online_outlined, 'My Bookings', () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyBookingsScreen()));
             }),
             _profileOption(Icons.settings_outlined, 'Settings', () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));

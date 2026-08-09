@@ -250,6 +250,151 @@ export default function App() {
     category: 'food'
   });
 
+  // Profile Edit State
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', phone: '', avatar: '' });
+  const [profileMessage, setProfileMessage] = useState({ type: '', text: '' });
+
+  // Booking & Payment Flow State
+  const [bookingModal, setBookingModal] = useState({ isOpen: false, trip: null, type: '', name: '', details: '', cost: 0 });
+  const [bookingStep, setBookingStep] = useState('select'); // select, payment, success
+  const [paymentForm, setPaymentForm] = useState({ method: 'upi', details: '' });
+  const [isBookingLoading, setIsBookingLoading] = useState(false);
+
+  const startEditingProfile = () => {
+    setProfileForm({
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+      avatar: user?.avatar || ''
+    });
+    setIsEditingProfile(true);
+    setProfileMessage({ type: '', text: '' });
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setProfileMessage({ type: '', text: '' });
+    try {
+      const res = await fetch(`${API_URL}/auth/user`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(profileForm)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileMessage({ type: 'error', text: data.message || 'Failed to update profile' });
+        return;
+      }
+      localStorage.setItem('user', JSON.stringify(data));
+      setUser(data);
+      setIsEditingProfile(false);
+      setProfileMessage({ type: 'success', text: 'Profile updated successfully!' });
+    } catch (err) {
+      // Offline fallback
+      const updatedUser = { ...user, ...profileForm };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+      setIsEditingProfile(false);
+      setProfileMessage({ type: 'success', text: 'Profile updated successfully (Offline Mode)!' });
+    }
+  };
+
+  const openBookingFlow = (trip, type) => {
+    let name = '';
+    let details = '';
+    let cost = 0;
+
+    if (type === 'hotel') {
+      name = trip.hotelName || 'Beach Resort Goa';
+      details = 'Deluxe Room';
+      cost = trip.optimizedCost ? Math.round(trip.optimizedCost * 0.35) : 4999;
+    } else {
+      // transport: flight or train
+      const isFlight = trip.budget > 30000;
+      name = isFlight ? 'Indigo Air AI-302' : 'Konkan Express Train';
+      details = isFlight ? 'Economy Class' : 'AC 3 Tier';
+      cost = trip.optimizedCost ? Math.round(trip.optimizedCost * 0.45) : 2500;
+    }
+
+    setBookingModal({
+      isOpen: true,
+      trip,
+      type,
+      name,
+      details,
+      cost
+    });
+    setBookingStep('select');
+  };
+
+  const getOverlappingBooking = (trip, type) => {
+    if (!trip || !bookings) return null;
+    const currentStart = new Date(trip.startDate);
+    const currentEnd = new Date(trip.endDate);
+
+    return bookings.find(b => {
+      const isTypeMatch = b.type === type || 
+                          (type === 'transport' && (b.type === 'flight' || b.type === 'train' || b.type === 'transport'));
+      if (!isTypeMatch) return false;
+
+      const bookedTrip = trips.find(t => t._id === b.tripId);
+      if (!bookedTrip) return false;
+
+      const bookedStart = new Date(bookedTrip.startDate);
+      const bookedEnd = new Date(bookedTrip.endDate);
+
+      return (currentStart <= bookedEnd) && (currentEnd >= bookedStart);
+    });
+  };
+
+  const handleCreateBooking = async (e) => {
+    e.preventDefault();
+    setIsBookingLoading(true);
+    
+    // Simulate transaction delay
+    await new Promise(r => setTimeout(r, 1500));
+
+    try {
+      const res = await fetch(`${API_URL}/bookings`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          tripId: bookingModal.trip._id,
+          type: bookingModal.type,
+          name: bookingModal.name,
+          details: bookingModal.details,
+          cost: bookingModal.cost
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBookings(prev => [data, ...prev]);
+        setBookingStep('success');
+      } else {
+        alert(data.message || 'Booking failed');
+      }
+    } catch (err) {
+      // Mock Booking save
+      const mockBooking = {
+        _id: 'mock_b_' + Date.now(),
+        tripId: bookingModal.trip._id,
+        type: bookingModal.type,
+        name: bookingModal.name,
+        details: bookingModal.details,
+        cost: bookingModal.cost,
+        bookingIdString: 'TRP' + Math.floor(100000000 + Math.random() * 900000000),
+        status: 'confirmed',
+        createdAt: new Date()
+      };
+      setBookings(prev => [mockBooking, ...prev]);
+      setBookingStep('success');
+    } finally {
+      setIsBookingLoading(false);
+      fetchBookings(); // refresh
+    }
+  };
+
   // Notifications Mock
   const notifications = [
     { id: 1, title: 'Booking Confirmed', text: 'Your stay at Beach Resort Goa is confirmed.', time: '2 hours ago' },
@@ -381,10 +526,7 @@ export default function App() {
       const res = await fetch(`${API_URL}/bookings`, { headers: getHeaders() });
       if (res.ok) setBookings(await res.json());
     } catch (e) {
-      setBookings([
-        { _id: 'b1', type: 'hotel', name: 'Beach Resort Goa', details: 'Deluxe Room', cost: 4999, bookingIdString: 'TRP123456789', status: 'confirmed' },
-        { _id: 'b2', type: 'transport', name: 'Konkan Express', details: 'AC 3 Tier (Train)', cost: 2500, bookingIdString: 'TRP987654321', status: 'confirmed' }
-      ]);
+      console.warn("Could not fetch bookings from server. Using local/cached state.");
     }
   };
 
@@ -465,8 +607,25 @@ export default function App() {
       if (res.ok) {
         setOptimizationResult(data.optimization);
         fetchTrips();
+      } else {
+        alert(data.message || 'Failed to generate plan.');
       }
     } catch (err) {
+      // Offline fallback: check for date overlaps first!
+      const newStart = new Date(plannerForm.startDate);
+      const newEnd = new Date(plannerForm.endDate);
+      
+      const overlap = trips.some(t => {
+        const tStart = new Date(t.startDate);
+        const tEnd = new Date(t.endDate);
+        return newStart <= tEnd && newEnd >= tStart;
+      });
+
+      if (overlap) {
+        alert(`Trip conflict: You already have a trip planned during this date period.`);
+        return;
+      }
+
       // Simulated optimization breakdown for offline mode
       const isGoa = plannerForm.destination.toLowerCase() === 'goa';
       const optCost = isGoa && Number(plannerForm.budget) === 25000 ? 20099 : Math.round(plannerForm.budget * 0.82);
@@ -1295,30 +1454,194 @@ export default function App() {
               <p>Hotels, stays, flights, and trains currently confirmed for your travel itineraries.</p>
             </header>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
-              {bookings.map(book => (
-                <div className="card" key={book._id} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span className={`badge ${book.type === 'hotel' ? 'badge-success' : 'badge-primary'}`}>
-                      {book.type.toUpperCase()}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 600 }}>{book.bookingIdString}</span>
-                  </div>
-                  
-                  <div>
-                    <h3 style={{ fontSize: '1.2rem', color: '#1F2937', fontWeight: 700 }}>{book.name}</h3>
-                    <p style={{ fontSize: '0.85rem', color: '#64748B' }}>{book.details}</p>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #F1F5F9', paddingTop: '1rem' }}>
-                    <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1F2937' }}>₹{book.cost.toLocaleString()}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#10B981', fontWeight: 600 }}>
-                      <CheckCircle size={14} /> Confirmed
-                    </span>
-                  </div>
+            {trips.length > 0 && (
+              <div className="card" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Compass size={20} style={{ color: '#2563EB' }} />
+                  <span style={{ fontWeight: 600, color: '#334155' }}>Select Trip to Manage Bookings:</span>
+                  <select 
+                    className="form-input" 
+                    style={{ width: '220px', padding: '0.4rem', border: '1px solid #CBD5E1', borderRadius: '8px' }}
+                    value={currentTrip?._id || ''}
+                    onChange={(e) => {
+                      const trip = trips.find(t => t._id === e.target.value);
+                      if (trip) setCurrentTrip(trip);
+                    }}
+                  >
+                    {trips.map(t => (
+                      <option key={t._id} value={t._id}>{t.title} ({new Date(t.startDate).toLocaleDateString()})</option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
+                {currentTrip && (
+                  <span style={{ fontSize: '0.875rem', color: '#64748B' }}>
+                    Status: <strong style={{ color: '#2563EB' }}>{currentTrip.status.toUpperCase()}</strong>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {currentTrip && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <h3 style={{ fontSize: '1.2rem', color: '#1F2937', fontWeight: 700 }}>Pending Reservations</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                  
+                  {/* Hotel booking card */}
+                  {(() => {
+                    const conflict = getOverlappingBooking(currentTrip, 'hotel');
+                    if (conflict) {
+                      const isSameTrip = conflict.tripId === currentTrip._id;
+                      if (isSameTrip) {
+                        return (
+                          <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #10B981', backgroundColor: 'rgba(16, 185, 129, 0.02)', minHeight: '180px' }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <span className="badge badge-success" style={{ backgroundColor: '#10B981', color: '#ffffff' }}>Hotel Stay Confirmed</span>
+                                <CheckCircle size={18} style={{ color: '#10B981' }} />
+                              </div>
+                              <h4 style={{ fontWeight: 700, margin: '0.25rem 0' }}>{conflict.name}</h4>
+                              <p style={{ fontSize: '0.85rem', color: '#64748B' }}>Details: {conflict.details}</p>
+                            </div>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#10B981' }}>Confirmed ID: {conflict.bookingIdString}</span>
+                          </div>
+                        );
+                      } else {
+                        const conflictTrip = trips.find(t => t._id === conflict.tripId);
+                        return (
+                          <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #EF4444', backgroundColor: 'rgba(239, 68, 68, 0.02)', minHeight: '180px' }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <span className="badge" style={{ backgroundColor: '#EF4444', color: '#ffffff', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>Overlap Conflict</span>
+                                <span style={{ color: '#EF4444', fontWeight: 700, fontSize: '0.85rem' }}>Blocked</span>
+                              </div>
+                              <h4 style={{ fontWeight: 700, margin: '0.25rem 0', color: '#B91C1C' }}>Overlap: {conflict.name}</h4>
+                              <p style={{ fontSize: '0.85rem', color: '#64748B' }}>Already reserved stay for <strong>{conflictTrip?.title || 'Another Trip'}</strong> during this date period.</p>
+                            </div>
+                            <button className="btn" disabled style={{ width: '100%', padding: '0.6rem', backgroundColor: '#E2E8F0', color: '#94A3B8', border: 'none', cursor: 'not-allowed' }}>
+                              Blocked (Date Overlap)
+                            </button>
+                          </div>
+                        );
+                      }
+                    } else {
+                      return (
+                        <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC', minHeight: '180px' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                              <span className="badge badge-warning" style={{ backgroundColor: '#F59E0B', color: '#ffffff' }}>Hotel Stay Pending</span>
+                              <span style={{ fontWeight: 700, color: '#1F2937' }}>₹{Math.round(currentTrip.optimizedCost * 0.35).toLocaleString()}</span>
+                            </div>
+                            <h4 style={{ fontWeight: 700, margin: '0.25rem 0' }}>{currentTrip.hotelName || 'Deluxe Stay'}</h4>
+                            <p style={{ fontSize: '0.85rem', color: '#64748B' }}>Secure your accommodation package recommended matching optimal metrics.</p>
+                          </div>
+                          <button 
+                            className="btn btn-primary" 
+                            style={{ marginTop: '1rem', width: '100%', padding: '0.6rem' }}
+                            onClick={() => openBookingFlow(currentTrip, 'hotel')}
+                          >
+                            Book Stay Now
+                          </button>
+                        </div>
+                      );
+                    }
+                  })()}
+
+                  {/* Transport booking card */}
+                  {(() => {
+                    const conflict = getOverlappingBooking(currentTrip, 'transport');
+                    if (conflict) {
+                      const isSameTrip = conflict.tripId === currentTrip._id;
+                      if (isSameTrip) {
+                        return (
+                          <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #10B981', backgroundColor: 'rgba(16, 185, 129, 0.02)', minHeight: '180px' }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <span className="badge badge-success" style={{ backgroundColor: '#10B981', color: '#ffffff' }}>Transit Confirmed</span>
+                                <CheckCircle size={18} style={{ color: '#10B981' }} />
+                              </div>
+                              <h4 style={{ fontWeight: 700, margin: '0.25rem 0' }}>{conflict.name}</h4>
+                              <p style={{ fontSize: '0.85rem', color: '#64748B' }}>Details: {conflict.details}</p>
+                            </div>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#10B981' }}>Confirmed ID: {conflict.bookingIdString}</span>
+                          </div>
+                        );
+                      } else {
+                        const conflictTrip = trips.find(t => t._id === conflict.tripId);
+                        return (
+                          <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #EF4444', backgroundColor: 'rgba(239, 68, 68, 0.02)', minHeight: '180px' }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <span className="badge" style={{ backgroundColor: '#EF4444', color: '#ffffff', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>Overlap Conflict</span>
+                                <span style={{ color: '#EF4444', fontWeight: 700, fontSize: '0.85rem' }}>Blocked</span>
+                              </div>
+                              <h4 style={{ fontWeight: 700, margin: '0.25rem 0', color: '#B91C1C' }}>Overlap: {conflict.name}</h4>
+                              <p style={{ fontSize: '0.85rem', color: '#64748B' }}>Already booked transit for <strong>{conflictTrip?.title || 'Another Trip'}</strong> during this date period.</p>
+                            </div>
+                            <button className="btn" disabled style={{ width: '100%', padding: '0.6rem', backgroundColor: '#E2E8F0', color: '#94A3B8', border: 'none', cursor: 'not-allowed' }}>
+                              Blocked (Date Overlap)
+                            </button>
+                          </div>
+                        );
+                      }
+                    } else {
+                      return (
+                        <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC', minHeight: '180px' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                              <span className="badge badge-warning" style={{ backgroundColor: '#F59E0B', color: '#ffffff' }}>Transit Tickets Pending</span>
+                              <span style={{ fontWeight: 700, color: '#1F2937' }}>₹{Math.round(currentTrip.optimizedCost * 0.45).toLocaleString()}</span>
+                            </div>
+                            <h4 style={{ fontWeight: 700, margin: '0.25rem 0' }}>{currentTrip.transportType === 'Flight' ? 'Flight Tickets' : 'Train Tickets'}</h4>
+                            <p style={{ fontSize: '0.85rem', color: '#64748B' }}>Book your transit tickets for comfortable and cost-effective journey.</p>
+                          </div>
+                          <button 
+                            className="btn btn-primary" 
+                            style={{ marginTop: '1rem', width: '100%', padding: '0.6rem' }}
+                            onClick={() => openBookingFlow(currentTrip, 'transport')}
+                          >
+                            Book Transit Tickets
+                          </button>
+                        </div>
+                      );
+                    }
+                  })()}
+
+                </div>
+              </div>
+            )}
+
+            <h3 style={{ fontSize: '1.2rem', color: '#1F2937', fontWeight: 700, marginTop: '1rem' }}>Booking History</h3>
+            
+            {bookings.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+                {bookings.map(book => (
+                  <div className="card" key={book._id} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <span className={`badge ${book.type === 'hotel' ? 'badge-success' : 'badge-primary'}`}>
+                        {book.type.toUpperCase()}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 600 }}>{book.bookingIdString}</span>
+                    </div>
+                    
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', color: '#1F2937', fontWeight: 700 }}>{book.name}</h3>
+                      <p style={{ fontSize: '0.85rem', color: '#64748B' }}>{book.details}</p>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #F1F5F9', paddingTop: '1rem' }}>
+                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1F2937' }}>₹{book.cost.toLocaleString()}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#10B981', fontWeight: 600 }}>
+                        <CheckCircle size={14} /> Confirmed
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="card" style={{ padding: '4rem', textAlign: 'center', color: '#94A3B8' }}>
+                No confirmed reservations found. Choose a trip and book your resources above!
+              </div>
+            )}
           </div>
         )}
 
@@ -1329,6 +1652,33 @@ export default function App() {
               <h1 style={{ color: '#0F172A' }}>Expense Tracker & Analytics</h1>
               <p>Track real-time spendings and compare them against your target optimized budget.</p>
             </header>
+
+            {trips.length > 0 && (
+              <div className="card" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Compass size={20} style={{ color: '#2563EB' }} />
+                  <span style={{ fontWeight: 600, color: '#334155' }}>Select Trip to Track:</span>
+                  <select 
+                    className="form-input" 
+                    style={{ width: '220px', padding: '0.4rem', border: '1px solid #CBD5E1', borderRadius: '8px' }}
+                    value={currentTrip?._id || ''}
+                    onChange={(e) => {
+                      const trip = trips.find(t => t._id === e.target.value);
+                      if (trip) setCurrentTrip(trip);
+                    }}
+                  >
+                    {trips.map(t => (
+                      <option key={t._id} value={t._id}>{t.title} ({new Date(t.startDate).toLocaleDateString()})</option>
+                    ))}
+                  </select>
+                </div>
+                {currentTrip && (
+                  <span style={{ fontSize: '0.875rem', color: '#64748B' }}>
+                    Budget: <strong>₹{currentTrip.budget.toLocaleString()}</strong> | Optimized: <strong>₹{currentTrip.optimizedCost.toLocaleString()}</strong>
+                  </span>
+                )}
+              </div>
+            )}
 
             {currentTrip ? (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2.5rem' }}>
@@ -1469,28 +1819,113 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Information list */}
+              {/* Information list / Edit Form */}
               <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <h3 style={{ fontSize: '1.25rem' }}>Personal Information</h3>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Full Name</label>
-                    <input type="text" className="form-input" value={user?.name} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Email Address</label>
-                    <input type="email" className="form-input" value={user?.email} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Mobile Number</label>
-                    <input type="text" className="form-input" value="+91 98765 43210" readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Nationality</label>
-                    <input type="text" className="form-input" value="Indian" readOnly />
-                  </div>
+                <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Personal Information</h3>
+                  {!isEditingProfile && (
+                    <button 
+                      className="btn btn-outline" 
+                      style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}
+                      onClick={startEditingProfile}
+                    >
+                      Edit Profile
+                    </button>
+                  )}
                 </div>
+
+                {profileMessage.text && (
+                  <div style={{ 
+                    padding: '0.75rem', 
+                    backgroundColor: profileMessage.type === 'success' ? '#D1FAE5' : '#FEE2E2', 
+                    border: `1px solid ${profileMessage.type === 'success' ? '#10B981' : '#FCA5A5'}`, 
+                    color: profileMessage.type === 'success' ? '#065F46' : '#B91C1C', 
+                    borderRadius: '8px', 
+                    fontSize: '0.875rem' 
+                  }}>
+                    {profileMessage.text}
+                  </div>
+                )}
+
+                {isEditingProfile ? (
+                  <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                      <div className="form-group">
+                        <label className="form-label">Full Name</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={profileForm.name} 
+                          onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                          required 
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Email Address</label>
+                        <input 
+                          type="email" 
+                          className="form-input" 
+                          value={profileForm.email} 
+                          onChange={e => setProfileForm({ ...profileForm, email: e.target.value })}
+                          required 
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Mobile Number</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={profileForm.phone} 
+                          onChange={e => setProfileForm({ ...profileForm, phone: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Avatar Image URL</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={profileForm.avatar} 
+                          onChange={e => setProfileForm({ ...profileForm, avatar: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                      <button 
+                        type="button" 
+                        className="btn btn-outline" 
+                        onClick={() => setIsEditingProfile(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Full Name</label>
+                      <input type="text" className="form-input" value={user?.name || ''} readOnly />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Email Address</label>
+                      <input type="email" className="form-input" value={user?.email || ''} readOnly />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Mobile Number</label>
+                      <input type="text" className="form-input" value={user?.phone || 'Not Provided'} readOnly />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Nationality</label>
+                      <input type="text" className="form-input" value="Indian" readOnly />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1613,6 +2048,265 @@ export default function App() {
         )}
 
       </main>
+
+      {/* BOOKING & DUMMY PAYMENT MODAL */}
+      {bookingModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: '550px',
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            overflow: 'hidden',
+            padding: '2rem',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E2E8F0', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  {bookingModal.type === 'hotel' ? 'Book Stay Reservation' : 'Book Transport Ticket'}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#64748B' }}>Trip: {bookingModal.trip?.title}</span>
+              </div>
+              {bookingStep !== 'success' && !isBookingLoading && (
+                <button 
+                  onClick={() => setBookingModal({ ...bookingModal, isOpen: false })}
+                  style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: '#94A3B8', cursor: 'pointer', padding: 0 }}
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
+            {/* STEP 1: OPTIONS SELECTION */}
+            {bookingStep === 'select' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', backgroundColor: '#F8FAFC', padding: '1rem', borderRadius: '12px' }}>
+                  {bookingModal.type === 'hotel' ? <Hotel size={24} style={{ color: '#10B981' }} /> : <Plane size={24} style={{ color: '#2563EB' }} />}
+                  <div>
+                    <h4 style={{ fontWeight: 700, fontSize: '0.95rem', margin: '0 0 0.25rem 0' }}>{bookingModal.name}</h4>
+                    <p style={{ fontSize: '0.85rem', color: '#64748B', margin: 0 }}>Recommended option based on smart budget parameters.</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '0.75rem', color: '#1F2937' }}>Choose Your Tier / Class:</h4>
+                  
+                  {bookingModal.type === 'hotel' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', border: bookingModal.details === 'Deluxe Room' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: bookingModal.details === 'Deluxe Room' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                        <input type="radio" name="hotelOption" checked={bookingModal.details === 'Deluxe Room'} onChange={() => setBookingModal({ ...bookingModal, details: 'Deluxe Room', cost: Math.round(bookingModal.trip.optimizedCost * 0.35) })} />
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Deluxe Room (Standard)</div>
+                          <span style={{ fontSize: '0.8rem', color: '#64748B' }}>Standard king bed, high speed Wi-Fi, breakfast included.</span>
+                        </div>
+                        <span style={{ marginLeft: 'auto', fontWeight: 800, color: '#2563EB' }}>₹{Math.round(bookingModal.trip.optimizedCost * 0.35).toLocaleString()}</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', border: bookingModal.details === 'Sea View Suite' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: bookingModal.details === 'Sea View Suite' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                        <input type="radio" name="hotelOption" checked={bookingModal.details === 'Sea View Suite'} onChange={() => setBookingModal({ ...bookingModal, details: 'Sea View Suite', cost: Math.round(bookingModal.trip.optimizedCost * 0.55) })} />
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Sea View Suite (Premium)</div>
+                          <span style={{ fontSize: '0.8rem', color: '#64748B' }}>Ocean front view balcony, mini bar access, premium amenities.</span>
+                        </div>
+                        <span style={{ marginLeft: 'auto', fontWeight: 800 }}>₹{Math.round(bookingModal.trip.optimizedCost * 0.55).toLocaleString()}</span>
+                      </label>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {bookingModal.trip.budget > 30000 ? (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', border: bookingModal.details === 'Economy Class' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: bookingModal.details === 'Economy Class' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                            <input type="radio" name="transitOption" checked={bookingModal.details === 'Economy Class'} onChange={() => setBookingModal({ ...bookingModal, name: 'Indigo Air AI-302', details: 'Economy Class', cost: Math.round(bookingModal.trip.optimizedCost * 0.45) })} />
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Indigo Air (Economy)</div>
+                              <span style={{ fontSize: '0.8rem', color: '#64748B' }}>15 kg check-in baggage, seat selection included.</span>
+                            </div>
+                            <span style={{ marginLeft: 'auto', fontWeight: 800, color: '#2563EB' }}>₹{Math.round(bookingModal.trip.optimizedCost * 0.45).toLocaleString()}</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', border: bookingModal.details === 'Business Class' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: bookingModal.details === 'Business Class' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                            <input type="radio" name="transitOption" checked={bookingModal.details === 'Business Class'} onChange={() => setBookingModal({ ...bookingModal, name: 'Air India AI-102', details: 'Business Class', cost: Math.round(bookingModal.trip.optimizedCost * 0.85) })} />
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Air India (Business Class)</div>
+                              <span style={{ fontSize: '0.8rem', color: '#64748B' }}>Lounge access, priority boarding, gourmet meals.</span>
+                            </div>
+                            <span style={{ marginLeft: 'auto', fontWeight: 800 }}>₹{Math.round(bookingModal.trip.optimizedCost * 0.85).toLocaleString()}</span>
+                          </label>
+                        </>
+                      ) : (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', border: bookingModal.details === 'AC 3 Tier' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: bookingModal.details === 'AC 3 Tier' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                            <input type="radio" name="transitOption" checked={bookingModal.details === 'AC 3 Tier'} onChange={() => setBookingModal({ ...bookingModal, name: 'Konkan Express Train', details: 'AC 3 Tier', cost: Math.round(bookingModal.trip.optimizedCost * 0.45) })} />
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Konkan Express (AC 3 Tier)</div>
+                              <span style={{ fontSize: '0.8rem', color: '#64748B' }}>Sleeper berths with AC comfort, linen provided.</span>
+                            </div>
+                            <span style={{ marginLeft: 'auto', fontWeight: 800, color: '#2563EB' }}>₹{Math.round(bookingModal.trip.optimizedCost * 0.45).toLocaleString()}</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', border: bookingModal.details === 'AC 2 Tier' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: bookingModal.details === 'AC 2 Tier' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                            <input type="radio" name="transitOption" checked={bookingModal.details === 'AC 2 Tier'} onChange={() => setBookingModal({ ...bookingModal, name: 'Konkan Express Train', details: 'AC 2 Tier', cost: Math.round(bookingModal.trip.optimizedCost * 0.65) })} />
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Konkan Express (AC 2 Tier)</div>
+                              <span style={{ fontSize: '0.8rem', color: '#64748B' }}>Spacious 4-berth compartments, curtains for privacy.</span>
+                            </div>
+                            <span style={{ marginLeft: 'auto', fontWeight: 800 }}>₹{Math.round(bookingModal.trip.optimizedCost * 0.65).toLocaleString()}</span>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', justifySelf: 'stretch', justifyContent: 'flex-end', borderTop: '1px solid #E2E8F0', paddingTop: '1.25rem' }}>
+                  <button className="btn btn-outline" onClick={() => setBookingModal({ ...bookingModal, isOpen: false })}>Cancel</button>
+                  <button className="btn btn-primary" onClick={() => setBookingStep('payment')}>Proceed to Checkout</button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: PAYMENT METHOD AND DETAILS */}
+            {bookingStep === 'payment' && (
+              <form onSubmit={handleCreateBooking} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ backgroundColor: '#F8FAFC', padding: '1.25rem', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1F2937', marginBottom: '0.75rem', margin: 0 }}>Billing Summary</h4>
+                  <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', fontSize: '0.875rem', color: '#64748B', marginBottom: '0.5rem', marginTop: '0.5rem' }}>
+                    <span>{bookingModal.name} ({bookingModal.details})</span>
+                    <span>₹{bookingModal.cost.toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', fontSize: '0.875rem', color: '#64748B', marginBottom: '0.5rem' }}>
+                    <span>Convenience Fee & Taxes</span>
+                    <span>₹{Math.round(bookingModal.cost * 0.05).toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', fontSize: '1.05rem', fontWeight: 800, color: '#1F2937', borderTop: '1px solid #E2E8F0', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+                    <span>Grand Total</span>
+                    <span style={{ color: '#2563EB' }}>₹{Math.round(bookingModal.cost * 1.05).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '0.75rem', color: '#1F2937', margin: 0 }}>Select Payment Method</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', border: paymentForm.method === 'upi' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: paymentForm.method === 'upi' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                      <input type="radio" name="payMethod" checked={paymentForm.method === 'upi'} onChange={() => setPaymentForm({ method: 'upi', details: '' })} />
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>UPI (GPay / PhonePe / Paytm)</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', border: paymentForm.method === 'card' ? '1px solid #2563EB' : '1px solid #E2E8F0', borderRadius: '8px', cursor: 'pointer', backgroundColor: paymentForm.method === 'card' ? 'rgba(37, 99, 235, 0.01)' : 'transparent' }}>
+                      <input type="radio" name="payMethod" checked={paymentForm.method === 'card'} onChange={() => setPaymentForm({ method: 'card', details: '' })} />
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Credit / Debit Card</span>
+                    </label>
+                  </div>
+                </div>
+
+                {paymentForm.method === 'upi' ? (
+                  <div className="form-group">
+                    <label className="form-label">Enter UPI ID</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="username@okaxis" 
+                      value={paymentForm.details}
+                      onChange={e => setPaymentForm({ ...paymentForm, details: e.target.value })}
+                      required 
+                    />
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Card Number</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="4111 2222 3333 4444" 
+                        value={paymentForm.details}
+                        onChange={e => setPaymentForm({ ...paymentForm, details: e.target.value })}
+                        required 
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group">
+                        <label className="form-label">Expiry Date</label>
+                        <input type="text" className="form-input" placeholder="MM/YY" required />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">CVV</label>
+                        <input type="password" className="form-input" placeholder="•••" maxLength="3" required />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '1rem', justifySelf: 'stretch', justifyContent: 'flex-end', borderTop: '1px solid #E2E8F0', paddingTop: '1.25rem', marginTop: '1rem' }}>
+                  <button type="button" className="btn btn-outline" disabled={isBookingLoading} onClick={() => setBookingStep('select')}>Back</button>
+                  <button type="submit" className="btn btn-success" disabled={isBookingLoading} style={{ minWidth: '150px' }}>
+                    {isBookingLoading ? 'Processing...' : `Pay ₹${Math.round(bookingModal.cost * 1.05).toLocaleString()}`}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 3: SUCCESS CONFIRMATION */}
+            {bookingStep === 'success' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '1.5rem', padding: '1rem 0' }}>
+                <div style={{
+                  width: '72px',
+                  height: '72px',
+                  borderRadius: '50%',
+                  backgroundColor: '#D1FAE5',
+                  color: '#10B981',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <CheckCircle size={48} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#065F46', marginBottom: '0.5rem', margin: 0 }}>Booking Successful!</h3>
+                  <p style={{ color: '#64748B', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                    Your stay/ticket reservation is confirmed. Check the Bookings tab or history dashboard anytime.
+                  </p>
+                </div>
+                <div style={{ backgroundColor: '#F8FAFC', padding: '1rem', borderRadius: '12px', width: '100%', border: '1px solid #E2E8F0', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span style={{ color: '#64748B' }}>Reservation Name</span>
+                    <strong>{bookingModal.name}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span style={{ color: '#64748B' }}>Category / Class</span>
+                    <strong>{bookingModal.details}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748B' }}>Confirmation Status</span>
+                    <strong style={{ color: '#10B981' }}>Confirmed</strong>
+                  </div>
+                </div>
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', padding: '0.75rem', marginTop: '1rem' }}
+                  onClick={() => setBookingModal({ ...bookingModal, isOpen: false })}
+                >
+                  Done
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
