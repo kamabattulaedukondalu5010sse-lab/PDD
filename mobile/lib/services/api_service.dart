@@ -253,6 +253,7 @@ class ApiService {
     if (_useMock) {
       final mock = Booking(
         id: 'bmock_${Random().nextInt(10000)}',
+        tripId: tripId,
         type: type,
         name: name,
         details: details,

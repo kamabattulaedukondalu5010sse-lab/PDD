@@ -156,6 +156,7 @@ class Trip {
 
 class Booking {
   final String id;
+  final String tripId;
   final String type;
   final String name;
   final String details;
@@ -165,6 +166,7 @@ class Booking {
 
   Booking({
     required this.id,
+    required this.tripId,
     required this.type,
     required this.name,
     required this.details,
@@ -176,6 +178,7 @@ class Booking {
   factory Booking.fromJson(Map<String, dynamic> json) {
     return Booking(
       id: json['_id'] ?? '',
+      tripId: json['tripId'] ?? '',
       type: json['type'] ?? 'hotel',
       name: json['name'] ?? '',
       details: json['details'] ?? '',
