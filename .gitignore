@@ -1,0 +1,28 @@
+# Node
+**/node_modules/
+**/dist/
+**/dist-ssr/
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# Flutter/Dart
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/build/
+**/coverage/
+mobile/android/app/debug
+mobile/android/app/profile
+mobile/android/app/release
+mobile/ios/Flutter/.last_build_id
+
+# IntelliJ / IDEs
+**/.idea/
+**/*.iml
+**/*.ipr
+**/*.iws
+**/.vscode/
+.DS_Store
+*.log

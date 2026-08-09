@@ -1,0 +1,383 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/api_service.dart';
+import '../models/models.dart';
+import '../theme/app_theme.dart';
+
+class HotelBookingScreen extends StatefulWidget {
+  final Trip trip;
+  const HotelBookingScreen({super.key, required this.trip});
+
+  @override
+  State<HotelBookingScreen> createState() => _HotelBookingScreenState();
+}
+
+class _HotelBookingScreenState extends State<HotelBookingScreen> {
+  int _selectedRoomIndex = 0; // 0: Deluxe, 1: Sea View
+
+  @override
+  Widget build(BuildContext context) {
+    final roomTypes = [
+      {'name': 'Deluxe Room', 'price': 4999.0, 'desc': 'Standard king bed, high speed Wi-Fi, breakfast included.'},
+      {'name': 'Sea View Room', 'price': 8499.0, 'desc': 'Ocean front view balcony, mini bar access, luxury bathing amenities.'}
+    ];
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Hotel Booking')),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Image.network(
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600',
+              height: 220,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Beach Resort Goa',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
+                      Row(
+                        children: [
+                          const Icon(Icons.star, color: AppTheme.warning, size: 18),
+                          const SizedBox(width: 4),
+                          Text('4.7', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        ],
+                      )
+                    ],
+                  ),
+                  const Text('Calangute Beach Road, North Goa', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Set along the sandy shores of Calangute Beach, this premium property offers spectacular dining options, swimming pools, spa facilities, and immediate beach access for a tranquil escape.',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 24),
+
+                  const Text('Select Room Option', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: roomTypes.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final room = roomTypes[index];
+                      final isSelected = _selectedRoomIndex == index;
+                      return InkWell(
+                        onTap: () => setState(() => _selectedRoomIndex = index),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: isSelected ? AppTheme.primary : AppTheme.border, width: isSelected ? 2 : 1),
+                            borderRadius: BorderRadius.circular(12),
+                            color: isSelected ? AppTheme.primary.withOpacity(0.01) : Colors.white,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(room['name'] as String, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                  Text('₹${(room['price'] as double).toStringAsFixed(0)}', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(room['desc'] as String, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 32),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final chosenRoom = roomTypes[_selectedRoomIndex];
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PaymentScreen(
+                              trip: widget.trip,
+                              hotelName: 'Beach Resort Goa',
+                              details: chosenRoom['name'] as String,
+                              cost: chosenRoom['price'] as double,
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('Book Room Now'),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PaymentScreen extends StatefulWidget {
+  final Trip trip;
+  final String hotelName;
+  final String details;
+  final double cost;
+
+  const PaymentScreen({
+    super.key,
+    required this.trip,
+    required this.hotelName,
+    required this.details,
+    required this.cost,
+  });
+
+  @override
+  State<PaymentScreen> createState() => _PaymentScreenState();
+}
+
+class _PaymentScreenState extends State<PaymentScreen> {
+  int _selectedMethod = 0; // 0: UPI, 1: Card, 2: NetBanking
+  bool _isLoading = false;
+
+  Future<void> _handlePayment() async {
+    setState(() => _isLoading = true);
+    
+    // Simulate transaction delay
+    await Future.delayed(const Duration(seconds: 2));
+    
+    setState(() => _isLoading = false);
+
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => BookingConfirmationScreen(
+            trip: widget.trip,
+            hotelName: widget.hotelName,
+            details: widget.details,
+            cost: widget.cost,
+          ),
+        ),
+        (route) => route.isFirst,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double totalAmount = widget.cost + 2500.0; // Room + Train/Transit ticket baseline
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Payment Details')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Checkout Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _billRow('Hotel stay (${widget.details})', '₹${widget.cost.toStringAsFixed(0)}'),
+                    const SizedBox(height: 8),
+                    _billRow('Transport tickets (Train Booking)', '₹2,500'),
+                    const Divider(height: 24),
+                    _billRow('Total Amount', '₹${totalAmount.toStringAsFixed(0)}', isTotal: true),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            const Text('Select Payment Method', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+
+            _paymentRadioTile(0, 'UPI (GPay / PhonePe)', Icons.account_balance_wallet_outlined),
+            const SizedBox(height: 12),
+            _paymentRadioTile(1, 'Credit / Debit Card', Icons.credit_card_outlined),
+            const SizedBox(height: 12),
+            _paymentRadioTile(2, 'Net Banking', Icons.account_balance_outlined),
+            const SizedBox(height: 36),
+
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _handlePayment,
+                child: _isLoading 
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text('Pay ₹${totalAmount.toStringAsFixed(0)}'),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, size: 14, color: AppTheme.textMuted),
+                  SizedBox(width: 4),
+                  Text('100% Secure Payments powered by Razorpay', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _billRow(String label, String price, {bool isTotal = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: isTotal ? AppTheme.textPrimary : AppTheme.textSecondary, fontWeight: isTotal ? FontWeight.bold : FontWeight.normal, fontSize: isTotal ? 16 : 14)),
+        Text(price, style: TextStyle(color: isTotal ? AppTheme.primary : AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: isTotal ? 18 : 14)),
+      ],
+    );
+  }
+
+  Widget _paymentRadioTile(int index, String label, IconData icon) {
+    final isSelected = _selectedMethod == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedMethod = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: isSelected ? AppTheme.primary : AppTheme.border),
+          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? AppTheme.primary.withOpacity(0.01) : Colors.white,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: isSelected ? AppTheme.primary : AppTheme.textSecondary),
+            const SizedBox(width: 16),
+            Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold))),
+            Radio<int>(
+              value: index,
+              groupValue: _selectedMethod,
+              onChanged: (val) => setState(() => _selectedMethod = val!),
+              activeColor: AppTheme.primary,
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class BookingConfirmationScreen extends StatelessWidget {
+  final Trip trip;
+  final String hotelName;
+  final String details;
+  final double cost;
+
+  const BookingConfirmationScreen({
+    super.key,
+    required this.trip,
+    required this.hotelName,
+    required this.details,
+    required this.cost,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bookingId = 'TRP${100000000 + (hotelName.hashCode % 900000000).abs()}';
+
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Checkmark Circle
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFD1FAE5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  color: AppTheme.success,
+                  size: 80,
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              const Text(
+                'Booking Confirmed!',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              ),
+              const Text('Your trip is successfully placed.', style: TextStyle(color: AppTheme.textSecondary)),
+              const SizedBox(height: 36),
+
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      _rowDetails('Booking ID', bookingId),
+                      const SizedBox(height: 8),
+                      _rowDetails('Destination', trip.destination),
+                      const SizedBox(height: 8),
+                      _rowDetails('Stay Reservation', hotelName),
+                      const SizedBox(height: 8),
+                      _rowDetails('Dates', '${trip.startDate.day} May - ${trip.endDate.day} May 2026'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 48),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () {
+                    // Navigate to DashboardLayout
+                    Navigator.of(context).pushReplacementNamed('/dashboard');
+                  },
+                  child: const Text('Back to Home'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {},
+                child: const Text('Download E-Ticket & Receipt', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rowDetails(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+        Text(value, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+      ],
+    );
+  }
+}
