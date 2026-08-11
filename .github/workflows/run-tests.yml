@@ -1,0 +1,65 @@
+name: Smart Travel Planner Test Execution
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python Dependencies
+        run: |
+          pip install openpyxl
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Install Playwright Browsers
+        run: |
+          cd frontend
+          npx playwright install chromium --with-deps
+
+      - name: Run E2E Tests
+        run: |
+          cd frontend
+          npx playwright test
+
+      - name: Update Excel Test Report
+        run: |
+          python update_report.py
+
+      - name: Commit and Push Updated Test Report
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add smart_travel_planner_test_case_report.xlsx
+          # Check if there are changes to commit before pushing
+          if git diff --staged --quiet; then
+            echo "No changes to commit in test report."
+          else
+            git commit -m "chore: auto-update test case execution report status to Passed"
+            git push
+          fi
